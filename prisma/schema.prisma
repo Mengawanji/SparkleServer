@@ -1,0 +1,424 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==================== ENUMS ====================
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  REFUNDED
+  FAILED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  MOBILE_PAYMENT
+}
+
+enum ServiceFrequency {
+  ONE_TIME
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+enum TimeSlot {
+  MORNING_8_12 // 8 AM - 12 PM
+  AFTERNOON_12_4 // 12 PM - 4 PM
+  EVENING_4_8 // 4 PM - 8 PM
+  FLEXIBLE // Any time
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+  CLEANER
+}
+
+// ==================== MODELS ====================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String?
+  firstName     String
+  lastName      String
+  phone         String
+  avatarUrl     String?
+  role          UserRole @default(CUSTOMER)
+  isActive      Boolean  @default(true)
+  emailVerified Boolean  @default(false)
+  phoneVerified Boolean  @default(false)
+
+  // Relations
+  customer      Customer?
+  cleaner       Cleaner?
+  admin         Admin?
+  notifications Notification[]
+
+  // Timestamps
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastLoginAt DateTime?
+
+  // Indexes
+  @@index([email])
+  @@index([role])
+  @@index([createdAt])
+}
+
+model Customer {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Customer-specific fields
+  preferences Json? // Store as JSON: { specialInstructions: string, petFriendly: boolean, etc. }
+  notes       String?
+
+  // Relations
+  addresses Address[]
+  bookings  Booking[]
+  payments  Payment[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  reviews   Review[]
+
+  @@index([userId])
+}
+
+model Cleaner {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Cleaner-specific fields
+  employeeId       String   @unique
+  hireDate         DateTime
+  hourlyRate       Float    @default(25.00)
+  maxHoursPerDay   Int      @default(8)
+  isAvailable      Boolean  @default(true)
+  skills           String[] // e.g., ["deep_cleaning", "window_cleaning", "carpet_cleaning"]
+  rating           Float?   @default(0.0)
+  totalJobs        Int      @default(0)
+  certificationUrl String?
+
+  // Relations
+  availabilities   Availability[]
+  assignedBookings Booking[]      @relation("CleanerAssignedBookings")
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  reviews   Review[]
+
+  @@index([userId])
+  @@index([employeeId])
+  @@index([isAvailable])
+  @@index([rating])
+}
+
+model Admin {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Admin-specific fields
+  department  String?
+  permissions String[] // e.g., ["manage_bookings", "manage_cleaners", "financial_reports"]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Service {
+  id String @id @default(cuid())
+
+  // Service details
+  name        String
+  slug        String @unique
+  description String
+  duration    Int // Duration in minutes
+  basePrice   Float
+  minHours    Int    @default(1)
+  maxHours    Int    @default(8)
+
+  // Service metadata
+  category String // e.g., "residential", "commercial", "specialized"
+  isActive Boolean  @default(true)
+  imageUrl String?
+  features String[] // e.g., ["eco_friendly", "pet_friendly", "deep_cleaning"]
+
+  // Relations
+  bookings Booking[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([slug])
+  @@index([category])
+  @@index([isActive])
+  @@index([basePrice])
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  // Address details
+  label      String // e.g., "Home", "Office", "Vacation Home"
+  street     String
+  city       String
+  state      String
+  postalCode String
+  country    String @default("US")
+
+  // Additional details
+  apartment    String?
+  floor        String?
+  accessCode   String?
+  instructions String?
+
+  // Location metadata
+  latitude  Float?
+  longitude Float?
+  isDefault Boolean @default(false)
+
+  // Relations
+  bookings Booking[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([customerId, label]) // One label per customer
+  @@index([customerId])
+  @@index([isDefault])
+  @@index([postalCode])
+}
+
+model Booking {
+  id        String @id @default(cuid())
+  reference String @unique
+
+  // Relationships
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  serviceId String
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  addressId String
+  address   Address @relation(fields: [addressId], references: [id], onDelete: Restrict)
+
+  cleanerId String?
+  cleaner   Cleaner? @relation("CleanerAssignedBookings", fields: [cleanerId], references: [id], onDelete: SetNull)
+
+  // Booking details
+  status         BookingStatus @default(PENDING)
+  date           DateTime // Booking date
+  startTime      DateTime // Actual start time
+  endTime        DateTime? // Actual end time
+  timeSlot       TimeSlot
+  estimatedHours Float
+  actualHours    Float?
+
+  // Pricing
+  subtotal       Float
+  taxRate        Float @default(0.08) // 8% tax
+  taxAmount      Float
+  discountAmount Float @default(0.00)
+  totalAmount    Float
+
+  // Special requirements
+  specialInstructions String?
+  frequency           ServiceFrequency @default(ONE_TIME)
+  recurringBookingId  String? // For recurring bookings chain
+  isRecurring         Boolean          @default(false)
+
+  // Cancellation
+  cancellationReason String?
+  cancelledAt        DateTime?
+
+  // Relations
+  payments Payment[]
+
+  // Metadata
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  confirmedAt DateTime?
+  completedAt DateTime?
+  review      Review?
+
+  // Indexes
+  @@index([reference])
+  @@index([customerId])
+  @@index([cleanerId])
+  @@index([status])
+  @@index([date])
+  @@index([createdAt])
+  @@index([serviceId])
+  @@index([recurringBookingId])
+}
+
+model Payment {
+  id String @id @default(cuid())
+
+  // Relationships
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  // Payment details
+  amount        Float
+  status        PaymentStatus @default(PENDING)
+  method        PaymentMethod
+  transactionId String?       @unique // External payment processor ID
+  currency      String        @default("USD")
+
+  // Card details (store securely, encrypted in production)
+  lastFourDigits String? // Only store last 4 digits
+  cardBrand      String? // e.g., "visa", "mastercard"
+
+  // Timestamps
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  paidAt     DateTime?
+  refundedAt DateTime?
+
+  // Metadata
+  failureReason String?
+  receiptUrl    String?
+
+  @@index([bookingId])
+  @@index([customerId])
+  @@index([status])
+  @@index([transactionId])
+  @@index([createdAt])
+  @@index([method])
+}
+
+model Availability {
+  id        String  @id @default(cuid())
+  cleanerId String
+  cleaner   Cleaner @relation(fields: [cleanerId], references: [id], onDelete: Cascade)
+
+  // Availability details
+  date        DateTime // Specific date
+  startTime   DateTime // Start time of availability
+  endTime     DateTime // End time of availability
+  isAvailable Boolean  @default(true)
+
+  // Recurring pattern (optional)
+  isRecurring       Boolean   @default(false)
+  recurrencePattern String? // e.g., "WEEKLY", "BIWEEKLY", "MONTHLY"
+  recurrenceEndDate DateTime?
+
+  // Notes
+  notes String?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cleanerId, date, startTime]) // Prevent duplicate availabilities
+  @@index([cleanerId])
+  @@index([date])
+  @@index([isAvailable])
+}
+
+model Review {
+  id String @id @default(cuid())
+
+  // Relationships
+  bookingId String  @unique
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  cleanerId String
+  cleaner   Cleaner @relation(fields: [cleanerId], references: [id], onDelete: Cascade)
+
+  // Review details
+  rating  Int // 1-5 stars
+  comment String?
+
+  // Response from cleaner/company
+  response    String?
+  respondedAt DateTime?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bookingId])
+  @@index([customerId])
+  @@index([cleanerId])
+  @@index([rating])
+  @@index([createdAt])
+}
+
+model Notification {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type    String
+  title   String
+  message String
+  isRead  Boolean @default(false)
+
+  entityType String?
+  entityId   String?
+
+  data Json?
+
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([type])
+}
+
+model SystemSetting {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  value       String
+  category    String // e.g., "booking", "payment", "notification"
+  description String?
+  isEditable  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+  @@index([category])
+}
