@@ -2,187 +2,191 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 import * as nodemailer from 'nodemailer';
-import { BookingResponseDto } from '../bookings/entities/booking.entity';
-import { EmailTemplates } from './templates/email.templates';
+
+interface EmailOptions {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+  cc?: string | string[];
+  bcc?: string | string[];
+}
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private resendClient: Resend | null = null;
-  private nodemailerTransporter: nodemailer.Transporter | null = null;
-  private useResend: boolean;
+  private resend: Resend;
+  private transporter: nodemailer.Transporter;
+  private readonly defaultFrom: string;
+  private readonly defaultFromName: string;
 
   constructor(private configService: ConfigService) {
-    this.useResend = this.configService.get<boolean>('email.useResend', false);
+    const resendApiKey = this.configService.get<string>('RESEND_API_KEY');
+    if (resendApiKey) {
+      this.resend = new Resend(resendApiKey);
+    }
 
-    if (this.useResend) {
-      // Initialize Resend
-      const apiKey = this.configService.get<string>('email.resend.apiKey');
-      if (apiKey) {
-        this.resendClient = new Resend(apiKey);
-        this.logger.log('Email service initialized with Resend');
-      } else {
-        this.logger.warn('Resend API key not found, falling back to Nodemailer');
-        this.useResend = false;
+    const smtpHost = this.configService.get<string>('SMTP_HOST');
+    const smtpPort = this.configService.get<number>('SMTP_PORT');
+    const smtpUser = this.configService.get<string>('SMTP_USER');
+    const smtpPass = this.configService.get<string>('SMTP_PASSWORD');
+    const smtpSecure = this.configService.get<boolean>('SMTP_SECURE', false);
+
+    if (smtpHost && smtpPort && smtpUser && smtpPass) {
+      this.transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpSecure,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+    }
+
+    this.defaultFrom = this.configService.get<string>('EMAIL_FROM', 'noreply@example.com');
+    this.defaultFromName = this.configService.get<string>('EMAIL_FROM_NAME', 'Your App');
+  }
+
+  /**
+   * Send email using available services
+   */
+  async send(options: EmailOptions, from?: string, fromName?: string): Promise<boolean> {
+    const fromEmail = from || this.defaultFrom;
+    const fromNameValue = fromName || this.defaultFromName;
+    const fromWithName = `${fromNameValue} <${fromEmail}>`;
+
+    // Try Resend first if available
+    if (this.resend) {
+      try {
+        const result = await this.sendWithResend(options, fromEmail, fromNameValue);
+        if (result.success) {
+          this.logger.debug(`Email sent via Resend: ${result.id}`);
+          return true;
+        }
+        this.logger.warn('Resend failed, falling back to SMTP');
+      } catch (error) {
+        this.logger.error('Resend error:', error);
       }
     }
 
-    if (!this.useResend) {
-      // Initialize Nodemailer
-      this.nodemailerTransporter = nodemailer.createTransport({
-        host: this.configService.get<string>('email.smtp.host'),
-        port: this.configService.get<number>('email.smtp.port'),
-        secure: false,
-        auth: {
-          user: this.configService.get<string>('email.smtp.auth.user'),
-          pass: this.configService.get<string>('email.smtp.auth.pass'),
-        },
-      });
-      this.logger.log('Email service initialized with Nodemailer');
-    }
-  }
-
-  /**
-   * Send booking confirmation email to customer
-   */
-  async sendBookingConfirmation(booking: BookingResponseDto): Promise<void> {
-    const { subject, html, text } = EmailTemplates.bookingConfirmation(booking);
-
-    try {
-      await this.sendEmail({
-        to: booking.customer.email,
-        subject,
-        html,
-        text,
-      });
-
-      this.logger.log(
-        `Booking confirmation sent to ${booking.customer.email} for ${booking.bookingReference}`,
-      );
-    } catch (error) {
-      this.logger.error('Failed to send booking confirmation', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Send admin notification email
-   */
-  async sendAdminNotification(booking: BookingResponseDto): Promise<void> {
-    const adminEmail = this.configService.get<string>('email.adminEmail');
-    if (!adminEmail) {
-      this.logger.warn('Admin email not configured, skipping notification');
-      return;
+    // Fall back to SMTP
+    if (this.transporter) {
+      return this.sendWithNodemailer(options, fromWithName);
     }
 
-    const { subject, html, text } = EmailTemplates.adminNotification(booking);
-
-    try {
-      await this.sendEmail({
-        to: adminEmail,
-        subject,
-        html,
-        text,
-      });
-
-      this.logger.log(`Admin notification sent for ${booking.bookingReference}`);
-    } catch (error) {
-      this.logger.error('Failed to send admin notification', error);
-      // Don't throw - admin notification failure shouldn't break the booking
-    }
-  }
-
-  /**
-   * Generic email sending method
-   */
-  private async sendEmail(options: {
-    to: string;
-    subject: string;
-    html: string;
-    text: string;
-  }): Promise<void> {
-    const from = this.configService.get<string>('email.resend.from');
-    const fromName = this.configService.get<string>('email.resend.fromName');
-
-    if (this.useResend && this.resendClient) {
-      return this.sendWithResend(options, from, fromName);
-    } else {
-      return this.sendWithNodemailer(options, from, fromName);
-    }
+    this.logger.error('No email service configured');
+    throw new Error('No email service configured');
   }
 
   /**
    * Send email using Resend
    */
   private async sendWithResend(
-    options: { to: string; subject: string; html: string; text: string },
+    options: EmailOptions,
     from: string,
-    fromName: string,
-  ): Promise<void> {
+    fromName: string
+  ): Promise<{ success: boolean; id?: string }> {
     try {
-      const result = await this.resendClient!.emails.send({
+      const response = await this.resend.emails.send({
         from: `${fromName} <${from}>`,
-        to: options.to,
+        to: Array.isArray(options.to) ? options.to : [options.to],
         subject: options.subject,
         html: options.html,
         text: options.text,
+        cc: options.cc ? (Array.isArray(options.cc) ? options.cc : [options.cc]) : undefined,
+        bcc: options.bcc ? (Array.isArray(options.bcc) ? options.bcc : [options.bcc]) : undefined,
       });
 
-      this.logger.debug(`Email sent via Resend: ${result.id}`);
+      if (response.error) {
+        this.logger.error('Resend error:', response.error);
+        return { success: false };
+      }
+
+      return { success: true, id: response.data?.id };
     } catch (error) {
-      this.logger.error('Resend send failed', error);
-      throw new Error(`Failed to send email via Resend: ${error.message}`);
+      this.logger.error('Resend error:', error);
+      return { success: false };
     }
   }
 
   /**
-   * Send email using Nodemailer
+   * Send email using Nodemailer (SMTP)
    */
   private async sendWithNodemailer(
-    options: { to: string; subject: string; html: string; text: string },
-    from: string,
-    fromName: string,
-  ): Promise<void> {
+    options: EmailOptions,
+    fromWithName: string
+  ): Promise<boolean> {
     try {
-      const info = await this.nodemailerTransporter!.sendMail({
-        from: `"${fromName}" <${from}>`,
-        to: options.to,
+      const mailOptions: nodemailer.SendMailOptions = {
+        from: fromWithName,
+        to: Array.isArray(options.to) ? options.to.join(', ') : options.to,
         subject: options.subject,
         html: options.html,
         text: options.text,
-      });
+        cc: options.cc ? (Array.isArray(options.cc) ? options.cc.join(', ') : options.cc) : undefined,
+        bcc: options.bcc ? (Array.isArray(options.bcc) ? options.bcc.join(', ') : options.bcc) : undefined,
+      };
 
-      this.logger.debug(`Email sent via Nodemailer: ${info.messageId}`);
-      
-      // Log preview URL for Ethereal (dev testing)
-      if (process.env.NODE_ENV === 'development') {
-        const previewUrl = nodemailer.getTestMessageUrl(info);
-        if (previewUrl) {
-          this.logger.debug(`Preview URL: ${previewUrl}`);
-        }
-      }
+      const info = await this.transporter.sendMail(mailOptions);
+      this.logger.debug(`Email sent via SMTP: ${info.messageId}`);
+      return true;
     } catch (error) {
-      this.logger.error('Nodemailer send failed', error);
-      throw new Error(`Failed to send email via Nodemailer: ${error.message}`);
+      this.logger.error('SMTP error:', error);
+      throw error;
     }
   }
 
   /**
-   * Verify email service connection (useful for health checks)
+   * Send verification email
    */
-  async verifyConnection(): Promise<boolean> {
-    try {
-      if (this.useResend && this.resendClient) {
-        // Resend doesn't have a verify method, assume OK if client exists
-        return true;
-      } else if (this.nodemailerTransporter) {
-        await this.nodemailerTransporter.verify();
-        return true;
-      }
-      return false;
-    } catch (error) {
-      this.logger.error('Email service verification failed', error);
-      return false;
-    }
+  async sendVerificationEmail(to: string, token: string, userName?: string): Promise<boolean> {
+    const verificationUrl = `${this.configService.get('APP_URL')}/verify-email?token=${token}`;
+    
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <h2>Email Verification</h2>
+          <p>Hello ${userName || 'User'},</p>
+          <p>Please verify your email by clicking the link below:</p>
+          <p><a href="${verificationUrl}">Verify Email</a></p>
+          <p>If you didn't request this, please ignore this email.</p>
+        </body>
+      </html>
+    `;
+
+    return this.send({
+      to,
+      subject: 'Verify Your Email',
+      html,
+      text: `Please verify your email by visiting: ${verificationUrl}`,
+    });
+  }
+
+  /**
+   * Send booking confirmation email
+   */
+  async sendBookingConfirmation(to: string, bookingDetails: any): Promise<boolean> {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <h2>Booking Confirmed</h2>
+          <p>Your booking has been confirmed!</p>
+          <p><strong>Reference:</strong> ${bookingDetails.reference}</p>
+          <p><strong>Date:</strong> ${new Date(bookingDetails.date).toLocaleDateString()}</p>
+          <p><strong>Time:</strong> ${new Date(bookingDetails.startTime).toLocaleTimeString()}</p>
+          <p><strong>Service:</strong> ${bookingDetails.service?.name}</p>
+          <p><strong>Total:</strong> $${bookingDetails.totalAmount}</p>
+        </body>
+      </html>
+    `;
+
+    return this.send({
+      to,
+      subject: `Booking Confirmed: ${bookingDetails.reference}`,
+      html,
+    });
   }
 }

@@ -8,7 +8,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { BookingResponseDto } from './entities/booking.entity';
-import { Prisma, Booking } from '@prisma/client';
+import { Prisma, BookingStatus, ServiceFrequency, TimeSlot } from '@prisma/client';
 import {
   parseISO,
   addDays,
@@ -34,22 +34,22 @@ export class BookingsService {
     const service = await this.validateService(createBookingDto.serviceId);
 
     // 2. Validate scheduling (date/time)
-    this.validateScheduling(
+    const { dateTime, timeSlot } = this.validateScheduling(
       createBookingDto.scheduledDate,
       createBookingDto.scheduledTime
     );
 
     // 3. Check availability
-    await this.checkAvailability(
-      createBookingDto.scheduledDate,
-      createBookingDto.scheduledTime
-    );
+    await this.checkAvailability(dateTime);
 
-    // 4. Calculate total price
-    const totalPrice = this.calculatePrice(service.basePrice);
+    // 4. Calculate pricing
+    const pricing = this.calculatePricing(service.basePrice);
 
-    // 5. Create or find customer
-    const customer = await this.upsertCustomer(createBookingDto.customer);
+    // 5. Create or find customer (via user)
+    const user = await this.upsertUser(createBookingDto.customer);
+    
+    // Get or create customer record
+    const customer = await this.getOrCreateCustomer(user.id);
 
     // 6. Create address
     const address = await this.createAddress(
@@ -58,7 +58,7 @@ export class BookingsService {
     );
 
     // 7. Generate booking reference
-    const bookingReference = await this.generateBookingReference();
+    const reference = await this.generateBookingReference();
 
     // 8. Create booking in transaction
     try {
@@ -69,36 +69,35 @@ export class BookingsService {
             customerId: customer.id,
             serviceId: service.id,
             addressId: address.id,
-            scheduledDate: parseISO(createBookingDto.scheduledDate),
-            scheduledTime: parse(createBookingDto.scheduledTime, 'HH:mm', new Date()),
-            durationMinutes: service.durationMinutes,
-            totalPrice: new Prisma.Decimal(totalPrice),
-            status: 'pending',
-            bookingReference,
+            reference,
+            status: BookingStatus.PENDING,
+            date: dateTime,
+            startTime: dateTime,
+            timeSlot: timeSlot,
+            estimatedHours: service.duration / 60, // Convert minutes to hours
+            subtotal: pricing.subtotal,
+            taxRate: pricing.taxRate,
+            taxAmount: pricing.taxAmount,
+            totalAmount: pricing.totalAmount,
+            frequency: ServiceFrequency.ONE_TIME,
+            isRecurring: false,
             specialInstructions: createBookingDto.specialInstructions || null,
           },
           include: {
-            customer: true,
+            customer: {
+              include: {
+                user: true,
+              },
+            },
             service: true,
             address: true,
-          },
-        });
-
-        // Create status history entry
-        await tx.bookingStatusHistory.create({
-          data: {
-            bookingId: newBooking.id,
-            fromStatus: null,
-            toStatus: 'pending',
-            changedBy: 'system',
-            notes: 'Booking created',
           },
         });
 
         return newBooking;
       });
 
-      this.logger.log(`Booking created successfully: ${booking.bookingReference}`);
+      this.logger.log(`Booking created successfully: ${booking.reference}`);
 
       return this.mapToResponseDto(booking);
     } catch (error) {
@@ -127,62 +126,76 @@ export class BookingsService {
   }
 
   /**
-   * Validate scheduling rules
+   * Validate scheduling rules and determine time slot
    */
-  private validateScheduling(scheduledDate: string, scheduledTime: string): void {
-    const bookingDate = parseISO(scheduledDate);
-    const today = startOfDay(new Date());
-    const minDate = addDays(today, 1); // Must book at least 1 day in advance
-    const maxDate = addDays(today, 90); // Can book up to 90 days ahead
+  private validateScheduling(scheduledDate: string, scheduledTime: string): { 
+    dateTime: Date; 
+    timeSlot: TimeSlot 
+  } {
+    const date = parseISO(scheduledDate);
+    const time = parse(scheduledTime, 'HH:mm', new Date());
+    
+    // Combine date and time
+    const dateTime = new Date(date);
+    dateTime.setHours(time.getHours(), time.getMinutes(), 0, 0);
 
-    // Check if date is in the past
-    if (isBefore(bookingDate, minDate)) {
+    const today = startOfDay(new Date());
+    const minDate = startOfDay(addDays(today, 1)); // Must book at least 1 day in advance
+    const maxDate = startOfDay(addDays(today, 90)); // Can book up to 90 days ahead
+
+    // Check if date is at least 1 day in advance
+    if (isBefore(dateTime, minDate)) {
       throw new BadRequestException(
         'Booking must be made at least 1 day in advance'
       );
     }
 
     // Check if date is too far in the future
-    if (isAfter(bookingDate, maxDate)) {
+    if (isAfter(dateTime, maxDate)) {
       throw new BadRequestException(
         'Bookings can only be made up to 90 days in advance'
       );
     }
 
-    // Validate time format and business hours
-    const [hours, minutes] = scheduledTime.split(':').map(Number);
-    
-    if (hours < 8 || hours >= 18) {
+    // Validate business hours (8 AM to 8 PM based on your TimeSlot enum)
+    const hour = time.getHours();
+    if (hour < 8 || hour >= 20) {
       throw new BadRequestException(
-        'Bookings are only available between 8:00 AM and 6:00 PM'
+        'Bookings are only available between 8:00 AM and 8:00 PM'
       );
     }
 
     // Only allow bookings on the hour or half-hour
+    const minutes = time.getMinutes();
     if (minutes !== 0 && minutes !== 30) {
       throw new BadRequestException(
         'Bookings must be scheduled on the hour or half-hour (e.g., 10:00, 10:30)'
       );
     }
+
+    // Determine time slot based on hour
+    let timeSlot: TimeSlot;
+    if (hour < 12) {
+      timeSlot = TimeSlot.MORNING_8_12;
+    } else if (hour < 16) {
+      timeSlot = TimeSlot.AFTERNOON_12_4;
+    } else {
+      timeSlot = TimeSlot.EVENING_4_8;
+    }
+
+    return { dateTime, timeSlot };
   }
 
   /**
    * Check if time slot is available
    */
-  private async checkAvailability(
-    scheduledDate: string,
-    scheduledTime: string
-  ): Promise<void> {
-    const date = parseISO(scheduledDate);
-    const time = parse(scheduledTime, 'HH:mm', new Date());
-
+  private async checkAvailability(dateTime: Date): Promise<void> {
     // Check for existing bookings at this time
     const existingBookings = await this.prisma.booking.findMany({
       where: {
-        scheduledDate: date,
-        scheduledTime: time,
+        date: dateTime,
         status: {
-          in: ['pending', 'confirmed'],
+          in: [BookingStatus.PENDING, BookingStatus.CONFIRMED],
         },
       },
     });
@@ -196,37 +209,57 @@ export class BookingsService {
       );
     }
 
-    // Check availability_slots table if it exists
-    const availabilitySlot = await this.prisma.availabilitySlot.findUnique({
+    // Check availability slots for cleaners
+    const availabilities = await this.prisma.availability.findMany({
       where: {
-        slotDate_slotTime: {
-          slotDate: date,
-          slotTime: time,
+        date: dateTime,
+        startTime: { lte: dateTime },
+        endTime: { gte: addMinutes(dateTime, 30) }, // Assuming 30 min minimum
+        isAvailable: true,
+      },
+      include: {
+        cleaner: {
+          include: {
+            user: true,
+          },
         },
       },
     });
 
-    if (availabilitySlot && !availabilitySlot.isAvailable) {
+    if (availabilities.length === 0) {
       throw new BadRequestException(
-        'This time slot is blocked. Please select a different time.'
+        'No cleaners available for this time slot. Please select a different time.'
       );
     }
   }
 
   /**
-   * Calculate total price based on service
-   * For MVP, price = base price
-   * Can be extended with: square footage multipliers, add-ons, discounts, etc.
+   * Calculate pricing details
    */
-  private calculatePrice(basePrice: Prisma.Decimal): number {
-    return Number(basePrice);
+  private calculatePricing(basePrice: number): {
+    subtotal: number;
+    taxRate: number;
+    taxAmount: number;
+    totalAmount: number;
+  } {
+    const subtotal = basePrice;
+    const taxRate = 0.08; // 8% tax rate (from your schema default)
+    const taxAmount = subtotal * taxRate;
+    const totalAmount = subtotal + taxAmount;
+
+    return {
+      subtotal,
+      taxRate,
+      taxAmount,
+      totalAmount,
+    };
   }
 
   /**
-   * Create or update customer (upsert by email)
+   * Create or update user (by email)
    */
-  private async upsertCustomer(customerDto: CreateBookingDto['customer']) {
-    return this.prisma.customer.upsert({
+  private async upsertUser(customerDto: CreateBookingDto['customer']) {
+    return this.prisma.user.upsert({
       where: { email: customerDto.email },
       update: {
         firstName: customerDto.firstName,
@@ -238,6 +271,29 @@ export class BookingsService {
         firstName: customerDto.firstName,
         lastName: customerDto.lastName,
         phone: customerDto.phone,
+        passwordHash: '', // You might want to generate a temporary password
+        role: 'CUSTOMER',
+        isActive: true,
+      },
+    });
+  }
+
+  /**
+   * Get or create customer record for user
+   */
+  private async getOrCreateCustomer(userId: string) {
+    const existingCustomer = await this.prisma.customer.findUnique({
+      where: { userId },
+    });
+
+    if (existingCustomer) {
+      return existingCustomer;
+    }
+
+    return this.prisma.customer.create({
+      data: {
+        userId,
+        preferences: {},
       },
     });
   }
@@ -249,15 +305,25 @@ export class BookingsService {
     customerId: string,
     addressDto: CreateBookingDto['address']
   ) {
+    // Check if customer already has this address as default
+    const existingDefaultAddress = await this.prisma.address.findFirst({
+      where: {
+        customerId,
+        isDefault: true,
+      },
+    });
+
     return this.prisma.address.create({
       data: {
         customerId,
-        streetAddress: addressDto.streetAddress,
-        apartmentUnit: addressDto.apartmentUnit || null,
+        label: 'Home', // Default label, you might want to make this configurable
+        street: addressDto.streetAddress,
+        apartment: addressDto.apartmentUnit || null,
         city: addressDto.city,
-        stateProvince: addressDto.stateProvince,
+        state: addressDto.stateProvince,
         postalCode: addressDto.postalCode,
         country: addressDto.country || 'US',
+        isDefault: !existingDefaultAddress, // Set as default if no default exists
       },
     });
   }
@@ -286,7 +352,7 @@ export class BookingsService {
 
     // Verify uniqueness (should be unique due to counter, but double-check)
     const existing = await this.prisma.booking.findUnique({
-      where: { bookingReference: reference },
+      where: { reference },
     });
 
     if (existing) {
@@ -305,9 +371,13 @@ export class BookingsService {
    */
   async findByReference(reference: string): Promise<BookingResponseDto> {
     const booking = await this.prisma.booking.findUnique({
-      where: { bookingReference: reference },
+      where: { reference },
       include: {
-        customer: true,
+        customer: {
+          include: {
+            user: true,
+          },
+        },
         service: true,
         address: true,
       },
@@ -324,15 +394,25 @@ export class BookingsService {
    * Get all bookings (for admin)
    */
   async findAll(status?: string): Promise<BookingResponseDto[]> {
+    // Convert string status to BookingStatus enum if provided
+    const whereCondition: any = {};
+    if (status) {
+      whereCondition.status = status as BookingStatus;
+    }
+    
     const bookings = await this.prisma.booking.findMany({
-      where: status ? { status } : undefined,
+      where: whereCondition,
       include: {
-        customer: true,
+        customer: {
+          include: {
+            user: true,
+          },
+        },
         service: true,
         address: true,
       },
       orderBy: {
-        scheduledDate: 'desc',
+        date: 'desc',
       },
     });
 
@@ -343,39 +423,217 @@ export class BookingsService {
    * Map Prisma booking to response DTO
    */
   private mapToResponseDto(booking: any): BookingResponseDto {
+    // Create scheduledTime Date object from booking.startTime
+    let scheduledTime: Date;
+    if (booking.startTime instanceof Date) {
+      scheduledTime = booking.startTime;
+    } else if (typeof booking.startTime === 'string') {
+      scheduledTime = new Date(booking.startTime);
+    } else {
+      // Create a default time if not available
+      scheduledTime = new Date(booking.date);
+      scheduledTime.setHours(9, 0, 0, 0); // Default to 9:00 AM
+    }
+
     return {
       id: booking.id,
-      bookingReference: booking.bookingReference,
+      bookingReference: booking.reference,
       status: booking.status,
-      scheduledDate: booking.scheduledDate,
-      scheduledTime: booking.scheduledTime,
-      durationMinutes: booking.durationMinutes,
-      totalPrice: Number(booking.totalPrice),
+      scheduledDate: booking.date,
+      scheduledTime: scheduledTime,
+      durationMinutes: booking.service?.duration || 0,
+      totalPrice: booking.totalAmount || new Prisma.Decimal(0),
       customer: {
-        id: booking.customer.id,
-        email: booking.customer.email,
-        firstName: booking.customer.firstName,
-        lastName: booking.customer.lastName,
-        phone: booking.customer.phone,
+        id: booking.customer?.id || '',
+        email: booking.customer?.user?.email || '',
+        firstName: booking.customer?.user?.firstName || '',
+        lastName: booking.customer?.user?.lastName || '',
+        phone: booking.customer?.user?.phone || '',
       },
       service: {
-        id: booking.service.id,
-        name: booking.service.name,
-        description: booking.service.description,
-        basePrice: Number(booking.service.basePrice),
+        id: booking.service?.id || '',
+        name: booking.service?.name || '',
+        description: booking.service?.description || null,
+        basePrice: booking.service?.basePrice || new Prisma.Decimal(0),
       },
       address: {
-        id: booking.address.id,
-        streetAddress: booking.address.streetAddress,
-        apartmentUnit: booking.address.apartmentUnit,
-        city: booking.address.city,
-        stateProvince: booking.address.stateProvince,
-        postalCode: booking.address.postalCode,
-        country: booking.address.country,
+        id: booking.address?.id || '',
+        streetAddress: booking.address?.street || '',
+        apartmentUnit: booking.address?.apartment || null,
+        city: booking.address?.city || '',
+        stateProvince: booking.address?.state || '',
+        postalCode: booking.address?.postalCode || '',
+        country: booking.address?.country || 'US',
       },
-      specialInstructions: booking.specialInstructions,
+      specialInstructions: booking.specialInstructions || null,
       createdAt: booking.createdAt,
       updatedAt: booking.updatedAt,
     };
+  }
+
+  /**
+   * Update booking status
+   */
+  async updateStatus(
+    reference: string,
+    status: BookingStatus,
+    notes?: string
+  ): Promise<BookingResponseDto> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { reference },
+    });
+
+    if (!booking) {
+      throw new NotFoundException(`Booking with reference ${reference} not found`);
+    }
+
+    const updatedBooking = await this.prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        status,
+        ...(status === BookingStatus.CONFIRMED && { confirmedAt: new Date() }),
+        ...(status === BookingStatus.COMPLETED && { completedAt: new Date() }),
+        ...(status === BookingStatus.CANCELLED && { cancelledAt: new Date() }),
+        ...(notes && { specialInstructions: notes }),
+      },
+      include: {
+        customer: {
+          include: {
+            user: true,
+          },
+        },
+        service: true,
+        address: true,
+      },
+    });
+
+    this.logger.log(`Booking ${reference} status updated to ${status}`);
+
+    return this.mapToResponseDto(updatedBooking);
+  }
+
+  /**
+   * Get bookings for a specific customer
+   */
+  async findByCustomer(userId: string): Promise<BookingResponseDto[]> {
+    const customer = await this.prisma.customer.findUnique({
+      where: { userId },
+      include: {
+        bookings: {
+          include: {
+            customer: {
+              include: {
+                user: true,
+              },
+            },
+            service: true,
+            address: true,
+          },
+          orderBy: {
+            date: 'desc',
+          },
+        },
+      },
+    });
+
+    if (!customer) {
+      return [];
+    }
+
+    return customer.bookings.map((booking) => this.mapToResponseDto(booking));
+  }
+
+  /**
+   * Cancel a booking
+   */
+  async cancelBooking(reference: string, reason?: string): Promise<BookingResponseDto> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { reference },
+    });
+
+    if (!booking) {
+      throw new NotFoundException(`Booking with reference ${reference} not found`);
+    }
+
+    if (booking.status === BookingStatus.CANCELLED) {
+      throw new BadRequestException('Booking is already cancelled');
+    }
+
+    const updatedBooking = await this.prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        status: BookingStatus.CANCELLED,
+        cancelledAt: new Date(),
+        cancellationReason: reason,
+      },
+      include: {
+        customer: {
+          include: {
+            user: true,
+          },
+        },
+        service: true,
+        address: true,
+      },
+    });
+
+    this.logger.log(`Booking ${reference} cancelled`);
+
+    return this.mapToResponseDto(updatedBooking);
+  }
+
+  /**
+   * Assign cleaner to booking
+   */
+  async assignCleaner(
+    reference: string,
+    cleanerId: string
+  ): Promise<BookingResponseDto> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { reference },
+    });
+
+    if (!booking) {
+      throw new NotFoundException(`Booking with reference ${reference} not found`);
+    }
+
+    const cleaner = await this.prisma.cleaner.findUnique({
+      where: { id: cleanerId },
+    });
+
+    if (!cleaner) {
+      throw new NotFoundException(`Cleaner with ID ${cleanerId} not found`);
+    }
+
+    if (!cleaner.isAvailable) {
+      throw new BadRequestException('Cleaner is not available');
+    }
+
+    const updatedBooking = await this.prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        cleanerId,
+        status: BookingStatus.CONFIRMED,
+        confirmedAt: new Date(),
+      },
+      include: {
+        customer: {
+          include: {
+            user: true,
+          },
+        },
+        service: true,
+        address: true,
+        cleaner: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+
+    this.logger.log(`Booking ${reference} assigned to cleaner ${cleanerId}`);
+
+    return this.mapToResponseDto(updatedBooking);
   }
 }

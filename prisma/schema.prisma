@@ -153,8 +153,6 @@ model Admin {
 
 model Service {
   id String @id @default(cuid())
-
-  // Service details
   name        String
   slug        String @unique
   description String
@@ -162,8 +160,6 @@ model Service {
   basePrice   Float
   minHours    Int    @default(1)
   maxHours    Int    @default(8)
-
-  // Service metadata
   category String // e.g., "residential", "commercial", "specialized"
   isActive Boolean  @default(true)
   imageUrl String?

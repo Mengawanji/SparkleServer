@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { BookingResponseDto } from '../../bookings/entities/booking.entity';
+import { BookingResponseDto } from '../bookings/entities/booking.entity';
 
 export class EmailTemplates {
   /**

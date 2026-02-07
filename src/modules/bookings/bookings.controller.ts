@@ -1,55 +1,43 @@
-import {
-  Controller,
-  Post,
-  Get,
-  Body,
-  Param,
+import { 
+  Controller, 
+  Get, 
+  Post, 
+  Body, 
+  Param, 
   Query,
-  HttpCode,
-  HttpStatus,
-  UseFilters,
-  UsePipes,
-  ValidationPipe,
-  Logger,
+  BadRequestException,
+  NotFoundException,
+  InternalServerErrorException
 } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
-import { EmailService } from '../email/email.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
-import {
-  BookingCreatedResponseDto,
-  BookingResponseDto,
-} from './entities/booking.entity';
+import { BookingStatus } from '@prisma/client';
+import { EmailService } from '../email/email.service';
 
 @Controller('bookings')
 export class BookingsController {
-  private readonly logger = new Logger(BookingsController.name);
-
   constructor(
     private readonly bookingsService: BookingsService,
     private readonly emailService: EmailService,
   ) {}
 
-  /**
-   * Create a new booking
-   * POST /api/v1/bookings
-   */
   @Post()
-  @HttpCode(HttpStatus.CREATED)
-  @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
-  async create(
-    @Body() createBookingDto: CreateBookingDto,
-  ): Promise<BookingCreatedResponseDto> {
-    this.logger.log(`Creating booking for ${createBookingDto.customer.email}`);
-
+  async create(@Body() createBookingDto: CreateBookingDto) {
     try {
-      // Create booking
       const booking = await this.bookingsService.create(createBookingDto);
-
-      // Send confirmation emails (don't wait for completion)
-      this.sendBookingEmails(booking).catch((error) => {
-        this.logger.error('Failed to send booking emails', error);
-        // Don't fail the request if email fails
-      });
+      
+      // Send confirmation email to customer
+      if (booking.customer?.email) {
+        try {
+          await this.emailService.sendBookingConfirmation(
+            booking.customer.email, 
+            booking
+          );
+        } catch (emailError) {
+          // Log but don't fail the booking if email fails
+          console.error('Failed to send confirmation email:', emailError);
+        }
+      }
 
       return {
         success: true,
@@ -57,54 +45,53 @@ export class BookingsController {
         booking,
       };
     } catch (error) {
-      this.logger.error('Failed to create booking', error);
-      throw error;
+      // Return the error message from the service
+      if (error instanceof BadRequestException || 
+          error instanceof NotFoundException ||
+          error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(error.message);
     }
   }
 
-  /**
-   * Get booking by reference number
-   * GET /api/v1/bookings/:reference
-   */
-  @Get(':reference')
-  async findByReference(
-    @Param('reference') reference: string,
-  ): Promise<BookingResponseDto> {
-    this.logger.log(`Fetching booking: ${reference}`);
-    return this.bookingsService.findByReference(reference);
-  }
-
-  /**
-   * Get all bookings (admin endpoint)
-   * GET /api/v1/bookings
-   */
   @Get()
-  async findAll(
-    @Query('status') status?: string,
-  ): Promise<BookingResponseDto[]> {
-    this.logger.log(`Fetching all bookings${status ? ` with status: ${status}` : ''}`);
+  findAll(@Query('status') status?: BookingStatus) {
     return this.bookingsService.findAll(status);
   }
 
-  /**
-   * Send booking confirmation and admin notification emails
-   */
-  private async sendBookingEmails(booking: BookingResponseDto): Promise<void> {
-    try {
-      // Send customer confirmation
-      await this.emailService.sendBookingConfirmation(booking);
-      this.logger.log(
-        `Sent confirmation email to ${booking.customer.email} for booking ${booking.bookingReference}`,
-      );
+  @Get('customer/:userId')
+  async findCustomerBookings(@Param('userId') userId: string) {
+    return this.bookingsService.findByCustomer(userId);
+  }
 
-      // Send admin notification
-      await this.emailService.sendAdminNotification(booking);
-      this.logger.log(
-        `Sent admin notification for booking ${booking.bookingReference}`,
-      );
-    } catch (error) {
-      this.logger.error('Error sending booking emails', error);
-      throw error;
-    }
+  @Get(':reference')
+  async findOne(@Param('reference') reference: string) {
+    return this.bookingsService.findByReference(reference);
+  }
+
+  @Post(':reference/cancel')
+  async cancel(
+    @Param('reference') reference: string,
+    @Body('reason') reason?: string
+  ) {
+    return this.bookingsService.cancelBooking(reference, reason);
+  }
+
+  @Post(':reference/assign-cleaner')
+  async assignCleaner(
+    @Param('reference') reference: string,
+    @Body('cleanerId') cleanerId: string
+  ) {
+    return this.bookingsService.assignCleaner(reference, cleanerId);
+  }
+
+  @Post(':reference/status')
+  async updateStatus(
+    @Param('reference') reference: string,
+    @Body('status') status: BookingStatus,
+    @Body('notes') notes?: string
+  ) {
+    return this.bookingsService.updateStatus(reference, status, notes);
   }
 }
