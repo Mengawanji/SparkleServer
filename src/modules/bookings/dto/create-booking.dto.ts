@@ -1,116 +1,61 @@
-import {
-  IsString,
-  IsEmail,
-  IsNotEmpty,
+import { 
+  IsEmail, 
+  IsEnum, 
+  IsInt, 
+  IsString, 
+  Min, 
   IsDateString,
-  IsOptional,
-  IsUUID,
-  MaxLength,
-  MinLength,
   Matches,
-  IsEnum,
-  ValidateNested,
+  MinLength,
+  MaxLength
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
 
-export enum ServiceType {
-  REGULAR = 'regular',
-  DEEP = 'deep',
-  MOVE_IN_OUT = 'move-in-out',
-}
-
-export class CreateAddressDto {
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
-  streetAddress: string;
-
-  @IsString()
-  @IsOptional()
-  @MaxLength(50)
-  apartmentUnit?: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  city: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  stateProvince: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(20)
-  postalCode: string;
-
-  @IsString()
-  @IsOptional()
-  @MaxLength(2)
-  @Matches(/^[A-Z]{2}$/, { message: 'Country must be a 2-letter ISO code' })
-  country?: string = 'US';
-}
-
-export class CreateCustomerDto {
-  @IsEmail()
-  @IsNotEmpty()
-  @MaxLength(255)
-  email: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MinLength(2)
-  @MaxLength(100)
-  firstName: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MinLength(2)
-  @MaxLength(100)
-  lastName: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @Matches(/^\+?[1-9]\d{1,14}$/, {
-    message: 'Phone must be a valid E.164 format (e.g., +12125551234)',
-  })
-  phone: string;
+export enum CleaningType {
+  REGULAR = 'REGULAR',
+  DEEP = 'DEEP',
+  MOVE_OUT_MOVE_IN = 'MOVE_OUT_MOVE_IN',
 }
 
 export class CreateBookingDto {
-  // Customer information
-  @ValidateNested()
-  @Type(() => CreateCustomerDto)
-  @IsNotEmpty()
-  customer: CreateCustomerDto;
+  @ApiProperty({ example: 'John Doe' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  fullName: string;
 
-  // Address information
-  @ValidateNested()
-  @Type(() => CreateAddressDto)
-  @IsNotEmpty()
-  address: CreateAddressDto;
+  @ApiProperty({ example: 'john.doe@example.com' })
+  @IsEmail()
+  email: string;
 
-  // Service selection
-  @IsUUID()
-  @IsNotEmpty()
-  serviceId: string;
+  @ApiProperty({ example: '123 Main St, Apt 4B, New York, NY 10001' })
+  @IsString()
+  @MinLength(10)
+  @MaxLength(200)
+  address: string;
 
-  // Scheduling
+  @ApiProperty({ enum: CleaningType })
+  @IsEnum(CleaningType)
+  cleaningType: CleaningType;
+
+  @ApiProperty({ example: 3, minimum: 0 })
+  @IsInt()
+  @Min(0)
+  numberOfBedrooms: number;
+
+  @ApiProperty({ example: 2, minimum: 1 })
+  @IsInt()
+  @Min(1)
+  numberOfBathrooms: number;
+
+  @ApiProperty({ example: '2024-03-15' })
   @IsDateString()
-  @IsNotEmpty()
-  scheduledDate: string; // Format: YYYY-MM-DD
+  preferredDate: string;
 
+  @ApiProperty({ example: '14:00', pattern: '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$' })
   @IsString()
-  @IsNotEmpty()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, {
-    message: 'scheduledTime must be in HH:mm format (e.g., 14:30)',
+  @Matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, {
+    message: 'Time must be in HH:MM format (24-hour)',
   })
-  scheduledTime: string; // Format: HH:mm (24-hour)
-
-  // Optional fields
-  @IsString()
-  @IsOptional()
-  @MaxLength(1000)
-  specialInstructions?: string;
+  preferredTime: string;
 }
