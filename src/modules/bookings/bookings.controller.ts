@@ -1,97 +1,69 @@
-import { 
-  Controller, 
-  Get, 
-  Post, 
-  Body, 
-  Param, 
+// src/bookings/bookings.controller.ts
+
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
   Query,
-  BadRequestException,
-  NotFoundException,
-  InternalServerErrorException
+  HttpCode,
+  HttpStatus,
+  UseInterceptors,
+  ClassSerializerInterceptor,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
-import { BookingStatus } from '@prisma/client';
-import { EmailService } from '../email/email.service';
+import { BookingResponseDto } from './dto/booking-response.dto';
 
+@ApiTags('bookings')
 @Controller('bookings')
+@UseInterceptors(ClassSerializerInterceptor)
 export class BookingsController {
-  constructor(
-    private readonly bookingsService: BookingsService,
-    private readonly emailService: EmailService,
-  ) {}
+  constructor(private readonly bookingsService: BookingsService) {}
 
   @Post()
-  async create(@Body() createBookingDto: CreateBookingDto) {
-    try {
-      const booking = await this.bookingsService.create(createBookingDto);
-      
-      // Send confirmation email to customer
-      if (booking.customer?.email) {
-        try {
-          await this.emailService.sendBookingConfirmation(
-            booking.customer.email, 
-            booking
-          );
-        } catch (emailError) {
-          // Log but don't fail the booking if email fails
-          console.error('Failed to send confirmation email:', emailError);
-        }
-      }
-
-      return {
-        success: true,
-        message: 'Booking created successfully',
-        booking,
-      };
-    } catch (error) {
-      // Return the error message from the service
-      if (error instanceof BadRequestException || 
-          error instanceof NotFoundException ||
-          error instanceof InternalServerErrorException) {
-        throw error;
-      }
-      throw new InternalServerErrorException(error.message);
-    }
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a new booking' })
+  @ApiResponse({
+    status: 201,
+    description: 'Booking created successfully',
+    type: BookingResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  async create(
+    @Body() createBookingDto: CreateBookingDto,
+  ): Promise<BookingResponseDto> {
+    return this.bookingsService.create(createBookingDto);
   }
 
   @Get()
-  findAll(@Query('status') status?: BookingStatus) {
-    return this.bookingsService.findAll(status);
-  }
-
-  @Get('customer/:userId')
-  async findCustomerBookings(@Param('userId') userId: string) {
-    return this.bookingsService.findByCustomer(userId);
-  }
-
-  @Get(':reference')
-  async findOne(@Param('reference') reference: string) {
-    return this.bookingsService.findByReference(reference);
-  }
-
-  @Post(':reference/cancel')
-  async cancel(
-    @Param('reference') reference: string,
-    @Body('reason') reason?: string
+  @ApiOperation({ summary: 'Get all bookings (admin)' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'List of bookings',
+  })
+  async findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.bookingsService.cancelBooking(reference, reason);
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 20;
+    return this.bookingsService.findAll(pageNum, limitNum);
   }
 
-  @Post(':reference/assign-cleaner')
-  async assignCleaner(
-    @Param('reference') reference: string,
-    @Body('cleanerId') cleanerId: string
-  ) {
-    return this.bookingsService.assignCleaner(reference, cleanerId);
-  }
-
-  @Post(':reference/status')
-  async updateStatus(
-    @Param('reference') reference: string,
-    @Body('status') status: BookingStatus,
-    @Body('notes') notes?: string
-  ) {
-    return this.bookingsService.updateStatus(reference, status, notes);
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a booking by ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Booking found',
+    type: BookingResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Booking not found' })
+  async findOne(@Param('id') id: string): Promise<BookingResponseDto> {
+    return this.bookingsService.findOne(id);
   }
 }

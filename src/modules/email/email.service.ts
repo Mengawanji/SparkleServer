@@ -13,17 +13,14 @@ export class EmailService {
   constructor(private configService: ConfigService) {
     this.initializeTransporter();
   }
-
   private initializeTransporter() {
-    const emailConfig = this.configService.get('email');
-    
     this.transporter = nodemailer.createTransport({
-      host: emailConfig.host,
-      port: emailConfig.port,
-      secure: emailConfig.secure,
+      host: this.configService.get<string>('EMAIL_HOST'),
+      port: this.configService.get<number>('EMAIL_PORT'),
+      secure: this.configService.get<string>('EMAIL_SECURE') === 'true',
       auth: {
-        user: emailConfig.user,
-        pass: emailConfig.password,
+        user: this.configService.get<string>('EMAIL_USER'),
+        pass: this.configService.get<string>('EMAIL_PASS'),
       },
     });
   }

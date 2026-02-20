@@ -5,6 +5,7 @@ import { BookingsModule } from './modules/bookings/bookings.module';
 import { EmailModule } from './modules/email/email.module';
 import { PrismaModule } from './prisma/prisma.module'; // Add this import
 import { PricingModule } from './pricing/pricing.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
@@ -12,6 +13,9 @@ import { PricingModule } from './pricing/pricing.module';
     BookingsModule,
     EmailModule,
     PricingModule,
+        ConfigModule.forRoot({
+      isGlobal: true, // 👈 VERY IMPORTANT
+    }),
   ],
   controllers: [AppController],
   providers: [AppService],
