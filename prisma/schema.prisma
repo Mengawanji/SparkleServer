@@ -28,6 +28,7 @@ model Booking {
   // Customer Information
   fullName     String
   email        String
+  phone        String?  
   address      String
 
   // Service Details
@@ -38,6 +39,7 @@ model Booking {
   // Scheduling
   preferredDate DateTime @db.Date
   preferredTime String   // Stored as "HH:MM" format
+  additionalNotes String? 
 
   // Pricing
   bedroomPrice   Decimal @db.Decimal(10, 2)

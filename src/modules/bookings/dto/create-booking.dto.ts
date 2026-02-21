@@ -7,14 +7,16 @@ import {
   IsDateString,
   Matches,
   MinLength,
-  MaxLength
+  MaxLength,
+  IsOptional,
+  IsPhoneNumber,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum CleaningType {
   REGULAR = 'REGULAR',
   DEEP = 'DEEP',
-  MOVE_OUT_MOVE_IN = 'MOVE_OUT_MOVE_IN',
+  MOVE_OUT_MOVE_IN = 'MOVE_OUT / MOVE_IN',
 }
 
 export class CreateBookingDto {
@@ -27,6 +29,10 @@ export class CreateBookingDto {
   @ApiProperty({ example: 'john.doe@example.com' })
   @IsEmail()
   email: string;
+
+  @IsPhoneNumber()
+  @IsOptional()
+  phone?: string;
 
   @ApiProperty({ example: '123 Main St, Apt 4B, New York, NY 10001' })
   @IsString()
@@ -58,4 +64,9 @@ export class CreateBookingDto {
     message: 'Time must be in HH:MM format (24-hour)',
   })
   preferredTime: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  additionalNotes?: string;
 }

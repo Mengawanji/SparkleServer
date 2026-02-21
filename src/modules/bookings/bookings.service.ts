@@ -5,6 +5,7 @@ import { EmailService } from '../email/email.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { BookingResponseDto } from './dto/booking-response.dto';
 import { Booking, CleaningType as PrismaCleaningType } from '@prisma/client';
+import { ConfigService } from '@nestjs/config'; // Add this import
 
 @Injectable()
 export class BookingsService {
@@ -14,6 +15,7 @@ export class BookingsService {
     private prisma: PrismaService,
     private pricingService: PricingService,
     private emailService: EmailService,
+    private configService: ConfigService, // Add ConfigService
   ) {}
 
   async create(createBookingDto: CreateBookingDto): Promise<BookingResponseDto> {
@@ -42,22 +44,39 @@ export class BookingsService {
       data: {
         fullName: createBookingDto.fullName,
         email: createBookingDto.email,
+        phone: createBookingDto.phone,
         address: createBookingDto.address,
         cleaningType: createBookingDto.cleaningType as unknown as PrismaCleaningType,
         numberOfBedrooms: createBookingDto.numberOfBedrooms,
         numberOfBathrooms: createBookingDto.numberOfBathrooms,
         preferredDate: new Date(createBookingDto.preferredDate),
         preferredTime: createBookingDto.preferredTime,
+        additionalNotes: createBookingDto.additionalNotes,
         bedroomPrice: pricing.bedroomPrice,
         bathroomPrice: pricing.bathroomPrice,
         totalPrice: pricing.totalPrice,
       },
     });
 
-    // Send invoice email asynchronously
-    this.sendInvoiceAsync(booking);
+    // Send emails asynchronously
+    await this.sendBookingEmails(booking);
 
     return this.mapToResponseDto(booking);
+  }
+
+  private async sendBookingEmails(booking: Booking): Promise<void> {
+    try {
+      // Send invoice to customer
+      await this.sendInvoiceAsync(booking);
+      
+      // Send notification to admin
+      await this.sendAdminNotificationAsync(booking);
+      
+      this.logger.log(`All emails sent successfully for booking ${booking.id}`);
+    } catch (error) {
+      this.logger.error(`Error sending emails for booking ${booking.id}`, error.stack);
+      // Don't throw - booking already created
+    }
   }
 
   private async sendInvoiceAsync(booking: Booking): Promise<void> {
@@ -73,13 +92,35 @@ export class BookingsService {
         },
       });
 
-      this.logger.log(`Invoice sent successfully for booking ${booking.id}`);
+      this.logger.log(`✅ Invoice sent successfully to customer ${booking.email} for booking ${booking.id}`);
     } catch (error) {
       this.logger.error(
-        `Failed to send invoice for booking ${booking.id}`,
+        `❌ Failed to send invoice to customer for booking ${booking.id}`,
         error.stack,
       );
-      // Don't throw - booking already created
+    }
+  }
+
+  private async sendAdminNotificationAsync(booking: Booking): Promise<void> {
+    try {
+      const adminEmail = this.configService.get<string>('ADMIN_EMAIL');
+      
+      if (!adminEmail) {
+        this.logger.error('ADMIN_EMAIL not configured in .env file');
+        return;
+      }
+
+      this.logger.log(`📧 Sending admin notification to ${adminEmail} for booking ${booking.id}`);
+      
+      // You'll need to create this method in your EmailService
+      await this.emailService.sendAdminNotification(booking, adminEmail);
+      
+      this.logger.log(`✅ Admin notification sent successfully for booking ${booking.id}`);
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to send admin notification for booking ${booking.id}`,
+        error.stack,
+      );
     }
   }
 
@@ -123,12 +164,14 @@ export class BookingsService {
       id: booking.id,
       fullName: booking.fullName,
       email: booking.email,
+      phone: booking.phone,
       address: booking.address,
       cleaningType: booking.cleaningType,
       numberOfBedrooms: booking.numberOfBedrooms,
       numberOfBathrooms: booking.numberOfBathrooms,
       preferredDate: booking.preferredDate,
       preferredTime: booking.preferredTime,
+      additionalNotes: booking.additionalNotes, 
       pricing: {
         bedroomPrice: booking.bedroomPrice.toNumber(),
         bathroomPrice: booking.bathroomPrice.toNumber(),
