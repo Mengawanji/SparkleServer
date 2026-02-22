@@ -5,7 +5,7 @@ import { EmailService } from '../email/email.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { BookingResponseDto } from './dto/booking-response.dto';
 import { Booking, CleaningType as PrismaCleaningType } from '@prisma/client';
-import { ConfigService } from '@nestjs/config'; // Add this import
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class BookingsService {
@@ -15,7 +15,7 @@ export class BookingsService {
     private prisma: PrismaService,
     private pricingService: PricingService,
     private emailService: EmailService,
-    private configService: ConfigService, // Add ConfigService
+    private configService: ConfigService,
   ) {}
 
   async create(createBookingDto: CreateBookingDto): Promise<BookingResponseDto> {

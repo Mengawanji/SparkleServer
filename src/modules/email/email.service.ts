@@ -28,25 +28,41 @@ export class EmailService {
     this.transporter = nodemailer.createTransport({
       host: this.configService.get<string>('EMAIL_HOST'),
       port: port,
-      // CRITICAL: secure must be true for port 465, false for 587 [citation:1]
       secure: port === 465, 
       auth: {
         user: this.configService.get<string>('EMAIL_USER'),
         pass: this.configService.get<string>('EMAIL_PASS'),
       },
       // Add timeout settings to prevent hanging connections
-      connectionTimeout: 30000, // 30 seconds
-      greetingTimeout: 30000,    // 30 seconds
-      socketTimeout: 30000,       // 30 seconds
-      // Add TLS options for better compatibility
-      tls: {
-        rejectUnauthorized: false, // Only for development
-        ciphers: 'SSLv3'
-      },
-      // Enable debugging
+      connectionTimeout: 30000,
+      greetingTimeout: 30000,
+      socketTimeout: 30000,
       debug: true,
       logger: true
     });
+  }
+
+  async sendAdminNotification(booking: Booking, adminEmail: string): Promise<void> {
+  try {
+    this.logger.log(`Preparing admin notification for booking ${booking.id}`);
+    
+    const htmlContent = this.generateAdminEmailTemplate(booking);
+    
+    const mailOptions = {
+      from: `"CleanHome Services" <${this.configService.get<string>('EMAIL_USER')}>`,
+      to: adminEmail,
+      replyTo: booking.email, // So admin can reply directly to customer
+      subject: `🔔 New Booking: ${booking.cleaningType} - ${booking.fullName}`,
+      html: htmlContent,
+    };
+
+      const info = await this.transporter.sendMail(mailOptions);
+      
+      this.logger.log(`✅ Admin notification sent to ${adminEmail}. MessageId: ${info.messageId}`);
+    } catch (error) {
+      this.logger.error(`❌ Failed to send admin notification to ${adminEmail}`, error.stack);
+      throw error;
+    }
   }
 
   async sendInvoiceEmail(booking: Booking): Promise<void> {
