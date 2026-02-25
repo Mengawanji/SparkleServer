@@ -3,7 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { Transporter } from 'nodemailer';
 import { generateInvoiceEmail } from './templates/invoice.template';
-import { Booking } from '@prisma/client';
+import { Booking, CleaningType } from '@prisma/client';
+
+const cleaningTypeLabels: Record<CleaningType, string> = {
+  REGULAR: 'Regular Cleaning',
+  DEEP: 'Deep Cleaning',
+  MOVE_OUT_MOVE_IN: 'Move-out / Move-in Cleaning'
+};
 
 @Injectable()
 export class EmailService {
@@ -28,7 +34,8 @@ export class EmailService {
     this.transporter = nodemailer.createTransport({
       host: this.configService.get<string>('EMAIL_HOST'),
       port: port,
-      secure: port === 465, 
+      secure: port === 465,
+      requireTLS: true, 
       auth: {
         user: this.configService.get<string>('EMAIL_USER'),
         pass: this.configService.get<string>('EMAIL_PASS'),
@@ -44,23 +51,25 @@ export class EmailService {
 
   async sendAdminNotification(booking: Booking, adminEmail: string): Promise<void> {
   try {
+    const cleaningLabel = cleaningTypeLabels[booking.cleaningType];
+
     this.logger.log(`Preparing admin notification for booking ${booking.id}`);
     
     const htmlContent = this.generateAdminEmailTemplate(booking);
     
     const mailOptions = {
-      from: `"CleanHome Services" <${this.configService.get<string>('EMAIL_USER')}>`,
+      from: `"Sandy's Sparkle Touch" <${this.configService.get<string>('EMAIL_USER')}>`,
       to: adminEmail,
       replyTo: booking.email, // So admin can reply directly to customer
-      subject: `🔔 New Booking: ${booking.cleaningType} - ${booking.fullName}`,
+      subject: `🔔 New Booking: ${cleaningLabel}`,
       html: htmlContent,
     };
 
       const info = await this.transporter.sendMail(mailOptions);
       
-      this.logger.log(`✅ Admin notification sent to ${adminEmail}. MessageId: ${info.messageId}`);
+      this.logger.log(`Admin notification sent to ${adminEmail}. MessageId: ${info.messageId}`);
     } catch (error) {
-      this.logger.error(`❌ Failed to send admin notification to ${adminEmail}`, error.stack);
+      this.logger.error(`Failed to send admin notification to ${adminEmail}`, error.stack);
       throw error;
     }
   }
@@ -85,9 +94,9 @@ export class EmailService {
       this.logger.log(`Attempting to send email to ${booking.email}`);
       const info = await this.transporter.sendMail(mailOptions);
       
-      this.logger.log(`✅ Invoice email sent to ${booking.email}. MessageId: ${info.messageId}`);
+      this.logger.log(`Invoice email sent to ${booking.email}. MessageId: ${info.messageId}`);
     } catch (error) {
-      this.logger.error(`❌ Failed to send invoice email to ${booking.email}`, error.stack);
+      this.logger.error(`Failed to send invoice email to ${booking.email}`, error.stack);
       
       // Provide more specific error guidance
       if (error.message.includes('Connection closed')) {
@@ -200,7 +209,7 @@ export class EmailService {
           </div>
           
           <div class="footer">
-            <p>This is an automated notification from CleanHome Services</p>
+            <p>This is an automated notification from Sandy's Sparkle Touch</p>
           </div>
         </div>
       </body>

@@ -10,14 +10,14 @@ export class BookingResponseDto {
   id: string;
   fullName: string;
   email: string;
-  phone: string | null;
+  phone?: string;
   address: string;
   cleaningType: CleaningType;
   numberOfBedrooms: number;
   numberOfBathrooms: number;
   preferredDate: Date;
   preferredTime: string;
-  additionalNotes: string | null;
+  additionalNotes?: string;
   pricing: PriceBreakdown;
   status: string;
   createdAt: Date;

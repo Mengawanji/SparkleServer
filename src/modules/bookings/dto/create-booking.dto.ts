@@ -16,7 +16,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export enum CleaningType {
   REGULAR = 'REGULAR',
   DEEP = 'DEEP',
-  MOVE_OUT_MOVE_IN = 'MOVE_OUT / MOVE_IN',
+  MOVE_OUT_MOVE_IN = 'MOVE_OUT_MOVE_IN',
 }
 
 export class CreateBookingDto {
