@@ -9,7 +9,6 @@ import {
   MinLength,
   MaxLength,
   IsOptional,
-  IsPhoneNumber,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -30,7 +29,6 @@ export class CreateBookingDto {
   @IsEmail()
   email: string;
 
-  @IsPhoneNumber()
   @IsOptional()
   phone?: string;
 

@@ -9,12 +9,12 @@ import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
-    PrismaModule, // Add this first - makes PrismaService available globally
+    PrismaModule, // makes PrismaService available globally
     BookingsModule,
     EmailModule,
     PricingModule,
         ConfigModule.forRoot({
-      isGlobal: true, // 👈 VERY IMPORTANT
+      isGlobal: true, // VERY IMPORTANT
     }),
   ],
   controllers: [AppController],
