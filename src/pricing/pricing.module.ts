@@ -1,4 +1,3 @@
-// pricing.module.ts
 import { Module } from '@nestjs/common';
 import { PricingService } from './pricing.service';
 
