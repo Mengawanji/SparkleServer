@@ -1,12 +1,11 @@
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
+  provider = "prisma-client-js"
 }
+
 
 enum CleaningType {
   REGULAR
@@ -27,31 +26,31 @@ model Booking {
   updatedAt DateTime @updatedAt
 
   // Customer Information
-  fullName String
-  email    String
-  phone    String?
-  address  String
+  fullName     String
+  email        String
+  phone        String?  
+  address      String
 
   // Service Details
   cleaningType      CleaningType
   numberOfBedrooms  Int
   numberOfBathrooms Int
-
+  
   // Scheduling
-  preferredDate   DateTime @db.Date
-  preferredTime   String
-  additionalNotes String?
+  preferredDate DateTime @db.Date
+  preferredTime String   // Stored as "HH:MM" format
+  additionalNotes String? 
 
   // Pricing
-  bedroomPrice  Decimal @db.Decimal(10, 2)
-  bathroomPrice Decimal @db.Decimal(10, 2)
-  totalPrice    Decimal @db.Decimal(10, 2)
+  bedroomPrice   Decimal @db.Decimal(10, 2)
+  bathroomPrice  Decimal @db.Decimal(10, 2)
+  totalPrice     Decimal @db.Decimal(10, 2)
 
   // Status
   status BookingStatus @default(PENDING)
 
   // Email tracking
-  invoiceSent   Boolean   @default(false)
+  invoiceSent Boolean @default(false)
   invoiceSentAt DateTime?
 
   @@index([email])
