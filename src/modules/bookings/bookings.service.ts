@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { PricingService } from 'src/src/pricing/pricing.service';
-import { PrismaService } from 'src/src/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { PricingService } from '../../pricing/pricing.service';
 import { EmailService } from '../email/email.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { BookingResponseDto } from './dto/booking-response.dto';
