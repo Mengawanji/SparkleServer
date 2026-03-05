@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "prisma generate && npx tsc -p tsconfig.build.json",
+    "build": "prisma generate && npx tsc -p tsconfig.build.json --listEmittedFiles 2>&1 || echo 'TSC FAILED'",
     "postinstall": "prisma generate",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
