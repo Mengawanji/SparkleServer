@@ -3,6 +3,6 @@ import { PricingService } from './pricing.service';
 
 @Module({
   providers: [PricingService],
-  exports: [PricingService], // 👈 VERY IMPORTANT
+  exports: [PricingService],
 })
 export class PricingModule {}
