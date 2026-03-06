@@ -92,10 +92,10 @@ export class BookingsService {
         },
       });
 
-      this.logger.log(`✅ Invoice sent successfully to customer ${booking.email} for booking ${booking.id}`);
+      this.logger.log(`Invoice sent successfully to customer ${booking.email} for booking ${booking.id}`);
     } catch (error) {
       this.logger.error(
-        `❌ Failed to send invoice to customer for booking ${booking.id}`,
+        `Failed to send invoice to customer for booking ${booking.id}`,
         error.stack,
       );
     }
@@ -110,15 +110,15 @@ export class BookingsService {
         return;
       }
 
-      this.logger.log(`📧 Sending admin notification to ${adminEmail} for booking ${booking.id}`);
+      this.logger.log(`Sending admin notification to ${adminEmail} for booking ${booking.id}`);
       
       // You'll need to create this method in your EmailService
       await this.emailService.sendAdminNotification(booking, adminEmail);
       
-      this.logger.log(`✅ Admin notification sent successfully for booking ${booking.id}`);
+      this.logger.log(`Admin notification sent successfully for booking ${booking.id}`);
     } catch (error) {
       this.logger.error(
-        `❌ Failed to send admin notification for booking ${booking.id}`,
+        `Failed to send admin notification for booking ${booking.id}`,
         error.stack,
       );
     }

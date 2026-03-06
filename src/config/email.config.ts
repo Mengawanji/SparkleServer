@@ -4,8 +4,8 @@ export default registerAs('email', () => ({
   // Resend configuration
   resend: {
     apiKey: process.env.RESEND_API_KEY,
-    from: process.env.EMAIL_FROM || 'bookings@yourcompany.com',
-    fromName: process.env.EMAIL_FROM_NAME || 'Your Cleaning Company',
+    from: process.env.EMAIL_FROM,
+    fromName: process.env.EMAIL_FROM_NAME,
   },
   
   // Nodemailer (SMTP) configuration
@@ -21,5 +21,5 @@ export default registerAs('email', () => ({
   
   // General configuration
   useResend: process.env.USE_RESEND === 'true',
-  adminEmail: process.env.ADMIN_EMAIL || 'admin@yourcompany.com',
+  adminEmail: process.env.ADMIN_EMAIL,
 }));

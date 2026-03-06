@@ -1,11 +1,11 @@
 import { registerAs } from '@nestjs/config';
 
 export default registerAs('app', () => ({
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv: process.env.NODE_ENV,
   port: parseInt(process.env.PORT || '3001', 10),
   apiPrefix: process.env.API_PREFIX || 'api/v1',
-  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  corsOrigin: process.env.CORS_ORIGIN,
+  frontendUrl: process.env.FRONTEND_URL,
   bookingReferencePrefix: process.env.BOOKING_REFERENCE_PREFIX || 'BK',
   
   // Rate limiting
