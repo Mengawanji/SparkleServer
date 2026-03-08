@@ -17,6 +17,7 @@ async function bootstrap() {
     origin: [
       'http://localhost:3000',
       'http://192.168.1.25:3000',
+      'https://sparkle-client.vercel.app/',
       configService.get('cors.origin')
     ],
     credential: true,
@@ -42,7 +43,7 @@ async function bootstrap() {
   //Swagger documentation
   const config = new DocumentBuilder()
     .setTitle('Cleaning Services API')
-    .setDescription('API for managing home cleaning service bookings')
+    .setDescription('API for managing bookings')
     .setVersion('1.0')
     .addTag('bookings')
     .build()
