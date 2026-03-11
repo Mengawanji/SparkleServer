@@ -37,9 +37,6 @@ async function bootstrap() {
     })
   )
 
-  //API PREFIX
-  app.setGlobalPrefix('api')
-
   //Swagger documentation
   const config = new DocumentBuilder()
     .setTitle('Cleaning Services API')
