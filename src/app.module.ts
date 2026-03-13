@@ -7,6 +7,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PricingModule } from './pricing/pricing.module';
 import { ConfigModule } from '@nestjs/config';
 import { HealthController } from './health.controller';
+import { ContactController } from './contact/contact.controller';
+import { SubscribeModule } from './subscribe/subscribe.module';
 
 @Module({
   imports: [
@@ -17,8 +19,9 @@ import { HealthController } from './health.controller';
         ConfigModule.forRoot({
       isGlobal: true, // VERY IMPORTANT
     }),
+        SubscribeModule,
   ],
-  controllers: [AppController, HealthController],
+  controllers: [AppController, HealthController, ContactController],
   providers: [AppService],
 })
 export class AppModule {}

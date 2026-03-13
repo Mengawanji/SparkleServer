@@ -58,3 +58,19 @@ model Booking {
   @@index([status])
   @@index([createdAt])
 }
+
+model Subscriber {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  email  String  @unique
+  active Boolean @default(true) // false = unsubscribed
+
+  // Email tracking
+  welcomeSent   Boolean   @default(false)
+  welcomeSentAt DateTime?
+
+  @@index([email])
+  @@index([active])
+  @@index([createdAt])
+}
