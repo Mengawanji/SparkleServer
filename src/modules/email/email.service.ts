@@ -136,7 +136,7 @@ export class EmailService {
     const info = await this.transporter.sendMail({
       from: `"Sandy's Sparkle Touch" <${fromEmail}>`,
       to: email,
-      subject: "Welcome to Sandy's Sparkle Touch! 🌟",
+      subject: "Welcome to Sandy's Sparkle Touch!",
       html: this.generateWelcomeTemplate(email),
     });
     this.logger.log(`Welcome email sent to ${email}. MessageId: ${info.messageId}`);
@@ -176,19 +176,16 @@ export class EmailService {
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td style="padding:10px 0;border-bottom:1px solid #f0f0f5;">
-                    <span style="font-size:18px;margin-right:12px;">🧹</span>
                     <span style="color:#2d3748;font-size:14px;font-weight:500;">Exclusive cleaning tips &amp; tricks</span>
                   </td>
                 </tr>
                 <tr>
                   <td style="padding:10px 0;border-bottom:1px solid #f0f0f5;">
-                    <span style="font-size:18px;margin-right:12px;">🎁</span>
                     <span style="color:#2d3748;font-size:14px;font-weight:500;">Special promos and seasonal offers</span>
                   </td>
                 </tr>
                 <tr>
                   <td style="padding:10px 0;">
-                    <span style="font-size:18px;margin-right:12px;">📅</span>
                     <span style="color:#2d3748;font-size:14px;font-weight:500;">New service announcements</span>
                   </td>
                 </tr>
@@ -207,7 +204,7 @@ export class EmailService {
           <tr>
             <td style="background:#f8f9ff;padding:24px 40px;border-top:1px solid #eef0f8;text-align:center;">
               <p style="margin:0;color:#a0aec0;font-size:12px;line-height:1.6;">
-                You're receiving this because you subscribed at sandyssparkletouch.ca<br/>
+                You're receiving this because you subscribed at sandyssparkletouch.com<br/>
                 <a href="${frontendUrl}/unsubscribe?email=${encodeURIComponent(email)}"
                    style="color:#3B4FCC;text-decoration:none;">Unsubscribe</a>
               </p>
@@ -334,7 +331,7 @@ export class EmailService {
 
           <p style="margin:0;font-size:14px;color:#6b7280;line-height:1.6;">
             If you have any urgent questions, feel free to reply directly to this email.<br/>
-            We look forward to making your space sparkle! 🧹
+            We look forward to making your space sparkle!
           </p>
         </td></tr>
 

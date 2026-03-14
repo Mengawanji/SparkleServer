@@ -11,13 +11,11 @@ async function bootstrap() {
 
 
   const configService = app.get(ConfigService)
-
-  // Enable CORS - IMPORTANT for frontend connection
+  
   app.enableCors({
     origin: [
       'http://localhost:3000',
-      'http://192.168.1.25:3000',
-      'https://sparkle-client.vercel.app/',
+      'https://sparkle-client.vercel.app',
       configService.get('cors.origin')
     ],
     credential: true,
